@@ -211,13 +211,10 @@ class CameraFragment : Fragment() {
             val areaWidth = halfTouchWidth * 2
             val areaHeight = halfTouchHeight * 2
 
-
-
             setFocusArea(areaX, areaY, areaWidth, areaHeight, captureRequest)
 
             true
         }
-
 
         view?.findViewById<ImageButton>(R.id.takePhoto)?.setOnClickListener {
 
