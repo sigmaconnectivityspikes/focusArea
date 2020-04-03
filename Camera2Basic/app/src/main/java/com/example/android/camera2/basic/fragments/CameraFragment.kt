@@ -17,16 +17,11 @@
 package com.example.android.camera2.basic.fragments
 
 import android.annotation.SuppressLint
+import android.content.ContentValues
 import android.content.Context
 import android.graphics.ImageFormat
-import android.hardware.camera2.CameraCaptureSession
-import android.hardware.camera2.CameraCharacteristics
-import android.hardware.camera2.CameraDevice
-import android.hardware.camera2.CameraManager
-import android.hardware.camera2.CaptureRequest
-import android.hardware.camera2.CaptureResult
-import android.hardware.camera2.DngCreator
-import android.hardware.camera2.TotalCaptureResult
+import android.hardware.camera2.*
+import android.hardware.camera2.params.MeteringRectangle
 import android.media.Image
 import android.media.ImageReader
 import android.os.Build
@@ -34,13 +29,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
 import android.util.Log
-import android.view.LayoutInflater
-import android.view.Surface
-import android.view.SurfaceHolder
-import android.view.SurfaceView
-import android.view.View
-import android.view.ViewGroup
-import androidx.exifinterface.media.ExifInterface
+import android.view.*
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.Observer
 import androidx.lifecycle.lifecycleScope
@@ -167,6 +156,9 @@ class CameraFragment : Fragment() {
      * - Starts the preview by dispatching a repeating capture request
      * - Sets up the still image capture listeners
      */
+
+    private var manualFocusEngaged = false
+
     private fun initializeCamera() = lifecycleScope.launch(Dispatchers.Main) {
         // Open the selected camera
         camera = openCamera(cameraManager, args.cameraId, cameraHandler)
@@ -191,7 +183,38 @@ class CameraFragment : Fragment() {
         // session is torn down or session.stopRepeating() is called
         session.setRepeatingRequest(captureRequest.build(), null, cameraHandler)
 
-        view?.setOnClickListener {
+        view?.setOnTouchListener {view, motionEvent ->
+            val actionMasked = motionEvent.actionMasked
+            if (actionMasked != MotionEvent.ACTION_DOWN) {
+                return@setOnTouchListener false
+            }
+            if (manualFocusEngaged) {
+                Log.d(ContentValues.TAG, "Manual focus already engaged")
+                return@setOnTouchListener true
+            }
+
+            val sensorArraySize = characteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)
+
+            //TODO: here I just flip x,y, but this needs to correspond with the sensor orientation (via SENSOR_ORIENTATION)
+            val y = (motionEvent.x / view.width.toFloat() * (sensorArraySize?.height()?.toFloat() ?: 0f)).toInt()
+            val x = (motionEvent.y / view.height.toFloat() * (sensorArraySize?.width()?.toFloat() ?: 0f)).toInt()
+            val halfTouchWidth = 150 //(int)motionEvent.getTouchMajor(); //TODO: this doesn't represent actual touch size in pixel. Values range in [3, 10]...
+            val halfTouchHeight = 150 //(int)motionEvent.getTouchMinor();
+
+            val areaX = (x - halfTouchWidth).coerceAtLeast(0)
+            val areaY = (y - halfTouchHeight).coerceAtLeast(0)
+            val areaWidth = halfTouchWidth * 2
+            val areaHeight = halfTouchHeight * 2
+
+
+
+            setFocusArea(areaX, areaY, areaWidth, areaHeight, captureRequest)
+
+            true
+        }
+
+
+        /*view?.setOnClickListener {
 
             // Disable click listener to prevent multiple requests simultaneously in flight
             it.isEnabled = false
@@ -227,7 +250,53 @@ class CameraFragment : Fragment() {
                 // Re-enable click listener after photo is taken
                 it.post { it.isEnabled = true }
             }
+        }*/
+    }
+
+    //Function to set focus area
+    private fun setFocusArea(areaX: Int, areaY: Int, areaWidth: Int, areaHeight: Int, captureRequest: CaptureRequest.Builder) {
+        val focusAreaTouch = MeteringRectangle(areaX, areaY, areaWidth, areaHeight, MeteringRectangle.METERING_WEIGHT_MAX - 1)
+
+        val captureCallbackHandler = object : CameraCaptureSession.CaptureCallback() {
+            override fun onCaptureCompleted(session: CameraCaptureSession, request: CaptureRequest, result: TotalCaptureResult) {
+                super.onCaptureCompleted(session, request, result)
+                manualFocusEngaged = false
+
+                if (request.tag === "FOCUS_TAG") {
+                    //the focus trigger is complete -
+                    //resume repeating (preview surface will get frames), clear AF trigger
+                    captureRequest.set(CaptureRequest.CONTROL_AF_TRIGGER, null)
+                    session.setRepeatingRequest(captureRequest.build(), null, null)
+                }
+            }
+
+            override fun onCaptureFailed(session: CameraCaptureSession, request: CaptureRequest, failure: CaptureFailure) {
+                super.onCaptureFailed(session, request, failure)
+                Log.e(ContentValues.TAG, "Manual AF failure: $failure")
+                manualFocusEngaged = false
+            }
         }
+
+        //first stop the existing repeating request
+        session.stopRepeating()
+
+        //cancel any existing AF trigger (repeated touches, etc.)
+        captureRequest.set(CaptureRequest.CONTROL_AF_TRIGGER, CameraMetadata.CONTROL_AF_TRIGGER_CANCEL)
+        captureRequest.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_OFF)
+        session.capture(captureRequest.build(), captureCallbackHandler, cameraHandler)
+
+        //Now add a new AF trigger with focus region
+        if (characteristics.get(CameraCharacteristics.CONTROL_MAX_REGIONS_AF) ?: 0 >= 1) {
+            captureRequest.set(CaptureRequest.CONTROL_AF_REGIONS, arrayOf(focusAreaTouch))
+        }
+        captureRequest.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
+        captureRequest.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO)
+        captureRequest.set(CaptureRequest.CONTROL_AF_TRIGGER, CameraMetadata.CONTROL_AF_TRIGGER_START)
+        captureRequest.setTag("FOCUS_TAG") //we'll capture this later for resuming the preview
+
+        //then we ask for a single request (not repeating!)
+        session.capture(captureRequest.build(), captureCallbackHandler, cameraHandler)
+        manualFocusEngaged = true
     }
 
     /** Opens the camera and returns the opened device (as the result of the suspend coroutine) */
