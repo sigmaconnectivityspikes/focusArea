@@ -30,6 +30,8 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.util.Log
 import android.view.*
+import android.widget.ImageButton
+import androidx.exifinterface.media.ExifInterface
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.Observer
 import androidx.lifecycle.lifecycleScope
@@ -106,18 +108,21 @@ class CameraFragment : Fragment() {
     /** Live data listener for changes in the device orientation relative to the camera */
     private lateinit var relativeOrientation: OrientationLiveData
 
-    override fun onCreateView(
+    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View =
+            inflater.inflate(R.layout.fragment_camera, container, false)
+
+    /*override fun onCreateView(
             inflater: LayoutInflater,
             container: ViewGroup?,
             savedInstanceState: Bundle?
-    ): View? = AutoFitSurfaceView(requireContext())
+    ): View? = AutoFitSurfaceView(requireContext())*/
 
     @SuppressLint("MissingPermission")
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        viewFinder = view as AutoFitSurfaceView
+        viewFinder = view.findViewById(R.id.surface) as AutoFitSurfaceView
 
-        view.holder.addCallback(object : SurfaceHolder.Callback {
+        viewFinder.holder.addCallback(object : SurfaceHolder.Callback {
             override fun surfaceDestroyed(holder: SurfaceHolder) = Unit
 
             override fun surfaceChanged(
@@ -133,8 +138,8 @@ class CameraFragment : Fragment() {
                         viewFinder.display, characteristics, SurfaceHolder::class.java)
                 Log.d(TAG, "View finder size: ${viewFinder.width} x ${viewFinder.height}")
                 Log.d(TAG, "Selected preview size: $previewSize")
-                view.holder.setFixedSize(previewSize.width, previewSize.height)
-                view.setAspectRatio(previewSize.width, previewSize.height)
+                viewFinder.holder.setFixedSize(previewSize.width, previewSize.height)
+                (viewFinder as AutoFitSurfaceView).setAspectRatio(previewSize.width, previewSize.height)
 
                 // To ensure that size is set, initialize camera in the view's thread
                 view.post { initializeCamera() }
@@ -214,7 +219,7 @@ class CameraFragment : Fragment() {
         }
 
 
-        /*view?.setOnClickListener {
+        view?.findViewById<ImageButton>(R.id.takePhoto)?.setOnClickListener {
 
             // Disable click listener to prevent multiple requests simultaneously in flight
             it.isEnabled = false
@@ -250,7 +255,7 @@ class CameraFragment : Fragment() {
                 // Re-enable click listener after photo is taken
                 it.post { it.isEnabled = true }
             }
-        }*/
+        }
     }
 
     //Function to set focus area
