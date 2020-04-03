@@ -120,7 +120,7 @@ class CameraFragment : Fragment() {
     @SuppressLint("MissingPermission")
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        viewFinder = view.findViewById(R.id.surface) as AutoFitSurfaceView
+        viewFinder = view.findViewById<AutoFitSurfaceView>(R.id.surface)
 
         viewFinder.holder.addCallback(object : SurfaceHolder.Callback {
             override fun surfaceDestroyed(holder: SurfaceHolder) = Unit
